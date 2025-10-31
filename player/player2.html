@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>PlayerJS Custom Mobile</title>
+<title>CSPlayer Mobile com PlayerJS</title>
 <script src="playerjs.js"></script>
 <style>
 html, body {
@@ -12,40 +12,34 @@ html, body {
     position: relative;
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    background:#000;
 }
-
-/* iframe ocupa todo container */
-#playerjs {
-    width: 100%;
-    height: 100%;
+#player-overlay {
+    position: absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    pointer-events:none; /* inicialmente não bloqueia clicks */
 }
-
-/* Controles customizados */
 .controls {
     position: absolute;
     bottom: 10px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-    color: #fff;
-    font-size: 18px;
-}
-
-button {
+    left: 50%;
+    transform: translateX(-50%);
+    display:flex;
+    gap:10px;
     background: rgba(0,0,0,0.5);
-    border: none;
-    color: white;
-    padding: 10px 15px;
-    border-radius: 5px;
-    cursor: pointer;
+    padding:5px 10px;
+    border-radius:5px;
 }
-
-button:active {
-    background: rgba(255,255,255,0.2);
+button {
+    background:none;
+    border:none;
+    color:white;
+    font-size:16px;
+    cursor:pointer;
+}
+input[type=range] {
+    width:150px;
 }
 </style>
 </head>
@@ -53,67 +47,98 @@ button:active {
 
 <div id="player-container">
     <div id="playerjs"></div>
-    <div class="controls">
-        <button id="playPause">Play</button>
-        <button id="rewind">« 10s</button>
-        <button id="forward">10s »</button>
+    <div id="player-overlay">
+        <div class="controls">
+            <button id="backward">⏪ 10s</button>
+            <button id="playpause">▶️</button>
+            <button id="forward">10s ⏩</button>
+            <input type="range" id="timeline" min="0" max="100" value="0">
+            <button id="fullscreen">⛶</button>
+        </div>
     </div>
 </div>
 
 <script>
-const player = new Playerjs({
-    id: "playerjs",
-    file: "https://www.youtube.com/watch?v=SEU_VIDEO",
-    params: {
-        modestbranding: 1, // remove branding
-        controls: 0,       // remove controles nativos
-        rel: 0,            // sem vídeos relacionados
-        iv_load_policy: 3, // remove anotações
-        autoplay: 1,
-        mute: 1,
-        playsinline: 1
-    }
-});
+    // ===== CONFIGURAÇÃO PLAYERJS =====
+    var playerConfig = {
+        id: "playerjs",
+        file: "https://www.youtube.com/watch?v=VIDEO_ID",
+        params: {
+            modestbranding:1,
+            rel:0,
+            iv_load_policy:3,
+            playsinline:1,
+            autoplay:1,
+            mute:1,
+            controls:0
+        }
+    };
+    var player = new Playerjs(playerConfig);
 
-// ----- Controles customizados -----
-let isPlaying = false;
+    // ===== CONTROLES CUSTOM =====
+    const btnPlay = document.getElementById("playpause");
+    const btnForward = document.getElementById("forward");
+    const btnBackward = document.getElementById("backward");
+    const timeline = document.getElementById("timeline");
+    const fullscreenBtn = document.getElementById("fullscreen");
+    const container = document.getElementById("player-container");
 
-const playBtn = document.getElementById("playPause");
-const rewindBtn = document.getElementById("rewind");
-const forwardBtn = document.getElementById("forward");
+    let isPlaying = false;
+    let duration = 0;
 
-playBtn.addEventListener("click", () => {
-    if(isPlaying){
-        player.api("pause");
-        playBtn.textContent = "Play";
-    } else {
-        player.api("play");
-        playBtn.textContent = "Pause";
-    }
-    isPlaying = !isPlaying;
-});
+    // PLAY / PAUSE
+    btnPlay.addEventListener("click", ()=>{
+        if(isPlaying){
+            player.api("pause");
+        } else {
+            player.api("play");
+        }
+    });
 
-rewindBtn.addEventListener("click", async () => {
-    const currentTime = await player.api("time");
-    player.api("seek", Math.max(0, currentTime - 10));
-});
+    // FORWARD / BACKWARD
+    btnForward.addEventListener("click", async ()=>{
+        const current = await player.api("time");
+        player.api("seek", current + 10);
+    });
+    btnBackward.addEventListener("click", async ()=>{
+        const current = await player.api("time");
+        player.api("seek", Math.max(0, current - 10));
+    });
 
-forwardBtn.addEventListener("click", async () => {
-    const currentTime = await player.api("time");
-    player.api("seek", currentTime + 10);
-});
+    // TIMELINE
+    setInterval(async ()=>{
+        if(player){
+            const current = await player.api("time");
+            duration = await player.api("duration");
+            if(duration > 0){
+                timeline.value = (current/duration)*100;
+            }
+        }
+    }, 500);
 
-// Atualiza status ao terminar ou iniciar o vídeo
-player.on("stateChange", function(state){
-    if(state == "playing"){
-        isPlaying = true;
-        playBtn.textContent = "Pause";
-    } else if(state == "paused" || state == "ended"){
-        isPlaying = false;
-        playBtn.textContent = "Play";
-    }
-});
+    timeline.addEventListener("input", async ()=>{
+        if(duration>0){
+            const seekTime = (timeline.value/100)*duration;
+            player.api("seek", seekTime);
+        }
+    });
+
+    // FULLSCREEN
+    fullscreenBtn.addEventListener("click", ()=>{
+        if(!document.fullscreenElement){
+            container.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    });
+
+    // DETECTA PLAY / PAUSE DO PLAYER
+    setInterval(async ()=>{
+        const state = await player.api("state"); // 1=playing,2=paused
+        isPlaying = state==1;
+        btnPlay.textContent = isPlaying ? "⏸️" : "▶️";
+    }, 300);
+
 </script>
-
 </body>
 </html>
